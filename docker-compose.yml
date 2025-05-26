@@ -1,0 +1,31 @@
+services:
+  n8n:
+    image: n8nio/n8n:1.94.0
+    entrypoint: ["tini", "--", "sh", "-c", "echo Hook import workflow started && n8n import:workflow --input /var/backup/n8n_node.json &> /tmp/post_start.log && n8n update:workflow --all --active=true && /docker-entrypoint.sh"]
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+        - CMD-SHELL
+        - wget --no-verbose --tries=1 --spider http://127.0.0.1:5678/healthz/readiness || exit 1
+      timeout: 5s
+    ports:
+      - '5678:5678'
+    volumes:
+      - ./n8n_node.json:/var/backup/n8n_node.json
+  n8n-init:
+    image: alpine/curl
+    command: ["-v", "--trace-ascii", "/dev/stdout", "-s", "--fail-with-body", "http://n8n:5678/rest/owner/setup", "-H", "Content-Type: application/json", "--data-raw", "{\"email\":\"${N8N_EMAIL:-admin@example.com}\",\"firstName\":\"${N8N_FIRST_NAME:-Test}\",\"lastName\":\"${N8N_LAST_NAME:-Test}\",\"password\":\"${N8N_PASSWROD:-Admin123}\"}"]
+    depends_on:
+      n8n:
+        condition: service_healthy
+
+  lt:
+    build:
+      dockerfile_inline: |
+        FROM node:alpine
+        RUN npm install -g localtunnel
+    command: "usr/local/bin/lt --port 5678 --local-host n8n -s ${PUBLIC_URL:-test-server}"
+    depends_on:
+      - n8n
+      
